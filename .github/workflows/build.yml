@@ -11,6 +11,9 @@ jobs:
     name: Build Kernel
     runs-on: ubuntu-22.04
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
       - name: Checkout kernel source
         uses: actions/checkout@v4
         with:
@@ -18,18 +21,16 @@ jobs:
           ref: vanilla
           path: kernel
 
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
       - name: Add xxKSU
         run: |
-          cd kernel && curl -LSs "https://raw.githubusercontent.com/backslashxx/KernelSU/refs/heads/master/kernel/setup.sh" | bash -
+          cd "$GITHUB_WORKSPACE/kernel"
+          curl -LSs "https://raw.githubusercontent.com/backslashxx/KernelSU/refs/heads/master/kernel/setup.sh" | bash -
           mv "$GITHUB_WORKSPACE/blossom_defconfig" "$GITHUB_WORKSPACE/kernel/arch/arm64/configs/"
 
       - name: Build
         uses: dabao1955/kernel_build_action@main
         with:
-          kernel-url: ./kernel/
+          kernel-url: ./kernel
           android-version: 11
           config: blossom_defconfig
           arch: arm64
