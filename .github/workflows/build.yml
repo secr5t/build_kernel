@@ -23,7 +23,7 @@ jobs:
 
       - name: Add xxKSU
         run: |
-          curl -LSs "https://raw.githubusercontent.com/backslashxx/KernelSU/refs/heads/master/kernel/setup.sh" | bash -
+          cd kernel && curl -LSs "https://raw.githubusercontent.com/backslashxx/KernelSU/refs/heads/master/kernel/setup.sh" | bash -
           mv "$GITHUB_WORKSPACE/blossom_defconfig" "$GITHUB_WORKSPACE/kernel/arch/arm64/configs/"
 
       - name: Build
