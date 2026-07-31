@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-kernel:
+    name: Build Kernel
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          repository: Iam-nishan/Jujutsu-kernel
+          ref: vanilla
+          path: kernel
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Add xxKSU
+        run: |
+          curl -LSs "https://raw.githubusercontent.com/backslashxx/KernelSU/refs/heads/master/kernel/setup.sh" | bash -
+          mv "$GITHUB_WORKSPACE/blossom_defconfig" "$GITHUB_WORKSPACE/kernel/arch/arm64/configs/"
+
+      - name: Build
+        uses: dabao1955/kernel_build_action@main
+        with:
+          kernel-url: ./kernel/
+          android-version: 11
+          config: blossom_defconfig
+          arch: arm64
+          aosp-gcc: true
+          ccache: true
+          aosp-clang: true
+          aosp-clang-version: r383902
+          anykernel3: true
