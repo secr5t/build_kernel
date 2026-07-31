@@ -30,7 +30,7 @@ jobs:
       - name: Build
         uses: dabao1955/kernel_build_action@main
         with:
-          kernel-url: ./kernel
+          kernel-url: ./kernel/
           android-version: 11
           config: blossom_defconfig
           arch: arm64
