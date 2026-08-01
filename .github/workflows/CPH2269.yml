@@ -22,45 +22,28 @@ jobs:
       - name: Fix Vendor Symlinks
         run: |
           cd android_kernel
-          cat << 'EOF' > fix_symlinks.py
-          import os
-          import shutil
+          find . \( -type f -o -type l \) | while read -r file; do
+            target=""
+            if [ -L "$file" ]; then
+              target=$(readlink "$file")
+            elif [ -f "$file" ]; then
+              if [ $(wc -c < "$file") -lt 300 ]; then
+                content=$(cat "$file" 2>/dev/null)
+                if [[ "$content" == *"vendor/"* ]]; then
+                  target="$content"
+                fi
+              fi
+            fi
 
-          for root, dirs, files in os.walk("."):
-              for name in files + dirs:
-                  filepath = os.path.join(root, name)
-                  target_path = None
-                  
-                  if os.path.islink(filepath):
-                      try:
-                          target_path = os.readlink(filepath)
-                      except Exception:
-                          pass
-                  elif os.path.isfile(filepath):
-                      try:
-                          if os.path.getsize(filepath) < 300:
-                              with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-                                  content = f.read().strip()
-                                  if "vendor/" in content:
-                                      target_path = content
-                      except Exception:
-                          pass
-
-                  if target_path and "vendor/" in target_path:
-                      resolved = os.path.normpath(os.path.join(root, target_path))
-                      if os.path.exists(resolved):
-                          if os.path.islink(filepath) or os.path.isfile(filepath):
-                              os.remove(filepath)
-                          elif os.path.isdir(filepath):
-                              shutil.rmtree(filepath)
-                          
-                          if os.path.isdir(resolved):
-                              shutil.copytree(resolved, filepath)
-                          elif os.path.isfile(resolved):
-                              shutil.copy2(resolved, filepath)
-          EOF
-          python3 fix_symlinks.py
-          rm fix_symlinks.py
+            if [[ -n "$target" && "$target" == *"vendor/"* ]]; then
+              dir=$(dirname "$file")
+              resolved=$(realpath -m "$dir/$target")
+              if [ -e "$resolved" ]; then
+                rm -rf "$file"
+                cp -r "$resolved" "$file"
+              fi
+            fi
+          done
 
       - name: Build Kernel
         uses: dabao1955/kernel_build_action@main
