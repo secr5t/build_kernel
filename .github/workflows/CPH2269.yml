@@ -15,45 +15,52 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/oppo-source/android_kernel_oppo_mt6765 -b oppo/mt6765_r_11.1.4_a16 android_kernel
 
-      - name: Patch Kconfig
+      - name: Checkout Vendor Source
+        run: |
+          git clone --depth=1 https://github.com/oppo-source/android_kernel_modules_oppo_mt6765 -b oppo/mt6765_r_11.1.4_a16 android_kernel/vendor
+
+      - name: Fix Vendor Symlinks
         run: |
           cd android_kernel
-          cat << 'EOF' > fix_kconfig.py
+          cat << 'EOF' > fix_symlinks.py
           import os
-          import re
+          import shutil
 
-          for root, _, files in os.walk("."):
-              for file in files:
-                  if "Kconfig" in file or file.endswith(".kconfig"):
-                      filepath = os.path.join(root, file)
+          for root, dirs, files in os.walk("."):
+              for name in files + dirs:
+                  filepath = os.path.join(root, name)
+                  target_path = None
+                  
+                  if os.path.islink(filepath):
                       try:
-                          with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-                              lines = f.readlines()
-                          
-                          new_lines = []
-                          modified = False
-                          for line in lines:
-                              m = re.match(r"^(\s*)source\s+[\"']?([^\"'\s]+)[\"']?(.*)$", line)
-                              if m:
-                                  leading_space = m.group(1)
-                                  target_path = m.group(2)
-                                  
-                                  p1 = target_path
-                                  p2 = os.path.join(root, target_path)
-                                  
-                                  if not os.path.isfile(p1) and not os.path.isfile(p2):
-                                      line = f"{leading_space}# {line.strip()}\n"
-                                      modified = True
-                              new_lines.append(line)
-                          
-                          if modified:
-                              with open(filepath, "w", encoding="utf-8") as f:
-                                  f.writelines(new_lines)
+                          target_path = os.readlink(filepath)
                       except Exception:
                           pass
+                  elif os.path.isfile(filepath):
+                      try:
+                          if os.path.getsize(filepath) < 300:
+                              with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                                  content = f.read().strip()
+                                  if "vendor/" in content:
+                                      target_path = content
+                      except Exception:
+                          pass
+
+                  if target_path and "vendor/" in target_path:
+                      resolved = os.path.normpath(os.path.join(root, target_path))
+                      if os.path.exists(resolved):
+                          if os.path.islink(filepath) or os.path.isfile(filepath):
+                              os.remove(filepath)
+                          elif os.path.isdir(filepath):
+                              shutil.rmtree(filepath)
+                          
+                          if os.path.isdir(resolved):
+                              shutil.copytree(resolved, filepath)
+                          elif os.path.isfile(resolved):
+                              shutil.copy2(resolved, filepath)
           EOF
-          python3 fix_kconfig.py
-          rm fix_kconfig.py
+          python3 fix_symlinks.py
+          rm fix_symlinks.py
 
       - name: Build Kernel
         uses: dabao1955/kernel_build_action@main
