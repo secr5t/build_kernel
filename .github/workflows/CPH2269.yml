@@ -18,30 +18,42 @@ jobs:
       - name: Patch Kconfig
         run: |
           cd android_kernel
-          python3 -c '
-          import os, re
+          cat << 'EOF' > fix_kconfig.py
+          import os
+          import re
 
           for root, _, files in os.walk("."):
               for file in files:
                   if "Kconfig" in file or file.endswith(".kconfig"):
                       filepath = os.path.join(root, file)
                       try:
-                          with open(filepath, "rb") as f:
-                              content = f.read().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
-                          lines = content.decode("utf-8", errors="ignore").splitlines(True)
+                          with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                              lines = f.readlines()
+                          
                           new_lines = []
+                          modified = False
                           for line in lines:
-                              match = re.match(r"^\s*source\s+[\"'\']?([^\"'\s]+)[\"'\']?", line)
-                              if match:
-                                  target = match.group(1)
-                                  if not target.startswith("$") and not os.path.exists(target):
-                                      line = "# " + line
+                              m = re.match(r"^(\s*)source\s+[\"']?([^\"'\s]+)[\"']?(.*)$", line)
+                              if m:
+                                  leading_space = m.group(1)
+                                  target_path = m.group(2)
+                                  
+                                  p1 = target_path
+                                  p2 = os.path.join(root, target_path)
+                                  
+                                  if not os.path.isfile(p1) and not os.path.isfile(p2):
+                                      line = f"{leading_space}# {line.strip()}\n"
+                                      modified = True
                               new_lines.append(line)
-                          with open(filepath, "wb") as f:
-                              f.write("".join(new_lines).encode("utf-8"))
+                          
+                          if modified:
+                              with open(filepath, "w", encoding="utf-8") as f:
+                                  f.writelines(new_lines)
                       except Exception:
                           pass
-          '
+          EOF
+          python3 fix_kconfig.py
+          rm fix_kconfig.py
 
       - name: Build Kernel
         uses: dabao1955/kernel_build_action@main
