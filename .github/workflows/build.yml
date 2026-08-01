@@ -1,41 +1,104 @@
-name: CI
+Name: Build Kernel
 
 on:
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
-  build-kernel:
-    name: Build Kernel
+  build:
     runs-on: ubuntu-22.04
+
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Checkout kernel source
-        uses: actions/checkout@v4
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
         with:
-          repository: Iam-nishan/Jujutsu-kernel
-          ref: vanilla
-          path: kernel
+          swap-size-gb: 10
 
-      - name: Add xxKSU
+      - name: Free Disk Space
         run: |
-          cd "$GITHUB_WORKSPACE/kernel"
-          curl -LSs "https://raw.githubusercontent.com/backslashxx/KernelSU/refs/heads/master/kernel/setup.sh" | bash -
-          mv "$GITHUB_WORKSPACE/blossom_defconfig" "$GITHUB_WORKSPACE/kernel/arch/arm64/configs/"
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo apt-get clean
+          df -h
 
-      - name: Build
-        uses: dabao1955/kernel_build_action@main
+      - name: Checkout Custom Repo
+        uses: actions/checkout@v4
         with:
-          kernel-url: ./kernel/
-          android-version: 11
-          config: blossom_defconfig
-          arch: arm64
-          aosp-gcc: true
-          ccache: true
-          aosp-clang: true
-          aosp-clang-version: r383902
-          anykernel3: true
+          path: main_repo
+
+      - name: Install Dependencies & Setup Repo Tool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential bc bison flex libssl-dev libelf-dev \
+            cpio rsync python3 python-is-python3 dwarves zip unzip patch git curl
+          
+          sudo curl -o /usr/local/bin/repo https://storage.googleapis.com/git-repo-downloads/repo
+          sudo chmod a+x /usr/local/bin/repo
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+      - name: Repo Init and Sync
+        run: |
+          mkdir -p android-kernel && cd android-kernel
+          repo init -u https://android.googlesource.com/kernel/manifest -b common-android12-5.10 --depth=1
+          repo sync -c -j$(nproc --all) --no-tags --no-clone-bundle --force-sync
+
+      - name: Setup ReSukiSU & SuSFS & NoMount
+        run: |
+          cd android-kernel/common
+          # KernelSU Next
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
+
+          # SuSFS
+          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b gki-android12-5.10 ../susfs4ksu
+          cp ../susfs4ksu/kernel_patches/fs/* fs/
+          cp ../susfs4ksu/kernel_patches/include/linux/* include/linux/
+          patch -p1 < ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch
+
+          # NoMount
+          git clone https://github.com/maxsteeel/nomount ../nomount
+          patch -p1 < ../nomount/kernel/patches/nomount_5.10_kernel_integration.patch
+          cp ../nomount/kernel/src/* fs/
+
+      - name: Merge Custom Fragment
+        run: |
+          cd android-kernel
+          FRAGMENT_FILE="$GITHUB_WORKSPACE/main_repo/custom.fragment"
+          
+          if [ -f "$FRAGMENT_FILE" ]; then
+            echo "Merging single fragment: $FRAGMENT_FILE"
+            ARCH=arm64 common/scripts/kconfig/merge_config.sh -m common/arch/arm64/configs/gki_defconfig "$FRAGMENT_FILE"
+            mv .config common/arch/arm64/configs/gki_defconfig
+          fi
+
+      - name: Fix defconfig
+        run: |
+          cd android-kernel
+          find common/ -type f -name "build.config*" -exec sed -i 's/check_defconfig//g' {} +
+
+      - name: Commit Local Changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          cd android-kernel/common
+          if [ -n "$(git status --porcelain)" ]; then
+            git add .
+            git commit -m "build: auto-commit local changes to avoid -dirty suffix"
+          fi
+
+      - name: Build Kernel
+        run: |
+          cd android-kernel
+          LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
+
+          find out/android12-5.10/dist -type f -name "Image" -exec cp {} "$GITHUB_WORKSPACE/main_repo/anykernel3/" \;
+
+      - name: Upload Kernel Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AK3-5.10-kernel
+          path: main_repo/anykernel3/
