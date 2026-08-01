@@ -36,7 +36,7 @@ jobs:
       - name: Build Kernel
         uses: dabao1955/kernel_build_action@main
         with:
-          kernel-dir: android_kernel
+          kernel-url: android_kernel/
           config: oppo6765_defconfig
           arch: arm64
           aosp-gcc: true
