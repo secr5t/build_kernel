@@ -18,17 +18,31 @@ jobs:
       - name: Patch Kconfig
         run: |
           cd android_kernel
-          fix_kconfig_sources() {
-              local file="$1"
-              grep -E '^[[:space:]]*source[[:space:]]+' "$file" | while read -r line; do
-                  target_path=$(echo "$line" | awk '{print $2}' | tr -d '"' | tr -d "'")
-                  if [ ! -f "$target_path" ]; then
-                      sed -i "s|.*${target_path}.*|# &|" "$file"
-                  fi
-              done
-          }
-          export -f fix_kconfig_sources
-          find . -type f \( -name "Kconfig" -o -name "Kconfig.*" \) -exec bash -c 'fix_kconfig_sources "$0"' {} \;
+          python3 -c '
+          import os, re
+
+          for root, _, files in os.walk("."):
+              for file in files:
+                  if file.startswith("Kconfig"):
+                      filepath = os.path.join(root, file)
+                      with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                          lines = f.readlines()
+                      
+                      new_lines = []
+                      changed = False
+                      for line in lines:
+                          match = re.match(r"^\s*source\s+[\"'\']?([^\"\'\s]+)[\"'\']?", line)
+                          if match:
+                              target = match.group(1)
+                              if not os.path.exists(target) and not os.path.exists(os.path.join(root, target)):
+                                  line = "# " + line
+                                  changed = True
+                          new_lines.append(line)
+                      
+                      if changed:
+                          with open(filepath, "w", encoding="utf-8") as f:
+                              f.writelines(new_lines)
+          '
 
       - name: Build Kernel
         uses: dabao1955/kernel_build_action@main
