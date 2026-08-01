@@ -35,8 +35,14 @@ jobs:
                               if not target.startswith("$") and not os.path.exists(target):
                                   dirname = os.path.dirname(target)
                                   if dirname:
-                                      os.makedirs(dirname, exist_ok=True)
-                                  open(target, "w").close()
+                                      try:
+                                          os.makedirs(dirname, exist_ok=True)
+                                      except Exception:
+                                          pass
+                                  try:
+                                      open(target, "w").close()
+                                  except Exception:
+                                      pass
           EOF
           python3 fix_kconfig.py
           rm fix_kconfig.py
