@@ -18,34 +18,30 @@ jobs:
       - name: Patch Kconfig
         run: |
           cd android_kernel
-          find . -type f \( -name "Kconfig*" -o -name "*.kconfig" \) -exec sed -i 's/\r$//' {} +
-          cat << 'EOF' > fix_kconfig.py
+          python3 -c '
           import os, re
 
           for root, _, files in os.walk("."):
               for file in files:
-                  if "Kconfig" in file:
+                  if "Kconfig" in file or file.endswith(".kconfig"):
                       filepath = os.path.join(root, file)
-                      with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-                          lines = f.readlines()
-                      for line in lines:
-                          match = re.match(r"^\s*source\s+[\"']?([^\"'\s]+)[\"']?", line)
-                          if match:
-                              target = match.group(1).strip("\"'")
-                              if not target.startswith("$") and not os.path.exists(target):
-                                  dirname = os.path.dirname(target)
-                                  if dirname:
-                                      try:
-                                          os.makedirs(dirname, exist_ok=True)
-                                      except Exception:
-                                          pass
-                                  try:
-                                      open(target, "w").close()
-                                  except Exception:
-                                      pass
-          EOF
-          python3 fix_kconfig.py
-          rm fix_kconfig.py
+                      try:
+                          with open(filepath, "rb") as f:
+                              content = f.read().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+                          lines = content.decode("utf-8", errors="ignore").splitlines(True)
+                          new_lines = []
+                          for line in lines:
+                              match = re.match(r"^\s*source\s+[\"'\']?([^\"'\s]+)[\"'\']?", line)
+                              if match:
+                                  target = match.group(1)
+                                  if not target.startswith("$") and not os.path.exists(target):
+                                      line = "# " + line
+                              new_lines.append(line)
+                          with open(filepath, "wb") as f:
+                              f.write("".join(new_lines).encode("utf-8"))
+                      except Exception:
+                          pass
+          '
 
       - name: Build Kernel
         uses: dabao1955/kernel_build_action@main
