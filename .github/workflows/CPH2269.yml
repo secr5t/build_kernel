@@ -18,7 +18,7 @@ jobs:
       - name: Patch Kconfig
         run: |
           cd android_kernel
-          python3 -c '
+          cat << 'EOF' > patch_kconfig.py
           import os, re
 
           for root, _, files in os.walk("."):
@@ -31,7 +31,7 @@ jobs:
                       new_lines = []
                       changed = False
                       for line in lines:
-                          match = re.match(r"^\s*source\s+[\"'\']?([^\"\'\s]+)[\"'\']?", line)
+                          match = re.match(r"^\s*source\s+[\"']?([^\"'\s]+)[\"']?", line)
                           if match:
                               target = match.group(1)
                               if not os.path.exists(target) and not os.path.exists(os.path.join(root, target)):
@@ -42,7 +42,9 @@ jobs:
                       if changed:
                           with open(filepath, "w", encoding="utf-8") as f:
                               f.writelines(new_lines)
-          '
+          EOF
+          python3 patch_kconfig.py
+          rm patch_kconfig.py
 
       - name: Build Kernel
         uses: dabao1955/kernel_build_action@main
