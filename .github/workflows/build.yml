@@ -46,7 +46,7 @@ jobs:
           repo init -u https://android.googlesource.com/kernel/manifest -b common-android12-5.10 --depth=1
           repo sync -c -j$(nproc --all) --no-tags --no-clone-bundle --force-sync
 
-      - name: Setup ReSukiSU & SuSFS & NoMount
+      - name: Setup KernelSU-Next, SuSFS & NoMount
         run: |
           cd android-kernel/common
           # KernelSU Next
