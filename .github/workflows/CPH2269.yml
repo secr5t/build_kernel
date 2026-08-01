@@ -15,7 +15,7 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/oppo-source/android_kernel_modules_oppo_mt6765 -b oppo/mt6765_r_11.1.4_a16 vendor || git clone --depth=1 https://github.com/oppo-source/android_kernel_modules_oppo_mt6765 vendor
 
-      - name: Build Kernel
+      - name: Build
         uses: dabao1955/kernel_build_action@main
         with:
           kernel-url: https://github.com/oppo-source/android_kernel_oppo_mt6765
@@ -27,3 +27,18 @@ jobs:
           android-version: 11
           aosp-clang-version: r383902
           access-token: ${{ secrets.GITHUB_TOKEN }}
+          extra-cmd: |
+            fix_kconfig_sources() {
+                local file="$1"
+                grep -E '^[[:space:]]*source[[:space:]]+' "$file" | while read -r line; do
+                    target_path=$(echo "$line" | awk '{print $2}' | tr -d '"' | tr -d "'")
+                    if [ ! -f "$target_path" ]; then
+                        dir_path=$(dirname "$target_path")
+                        if [ -d "$dir_path" ]; then
+                            sed -i "s|source[[:space:]]\+[\"']\?${target_path}[\"']\?|source ${dir_path}|g" "$file"
+                        fi
+                    fi
+                done
+            }
+            export -f fix_kconfig_sources
+            find . -type f \( -name "Kconfig" -o -name "Kconfig.*" \) -exec bash -c 'fix_kconfig_sources "$0"' {} \;
