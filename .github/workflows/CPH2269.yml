@@ -13,37 +13,7 @@ jobs:
     steps:
       - name: Checkout Kernel Source
         run: |
-          git clone --depth=1 https://github.com/oppo-source/android_kernel_oppo_mt6765 -b oppo/mt6765_r_11.1.4_a16 android_kernel
-
-      - name: Checkout Vendor Source
-        run: |
-          git clone --depth=1 https://github.com/oppo-source/android_kernel_modules_oppo_mt6765 -b oppo/mt6765_r_11.1.4_a16 android_kernel/vendor
-
-      - name: Fix Vendor Symlinks
-        run: |
-          cd android_kernel
-          find . \( -type f -o -type l \) | while read -r file; do
-            target=""
-            if [ -L "$file" ]; then
-              target=$(readlink "$file")
-            elif [ -f "$file" ]; then
-              if [ $(wc -c < "$file") -lt 300 ]; then
-                content=$(cat "$file" 2>/dev/null)
-                if [[ "$content" == *"vendor/"* ]]; then
-                  target="$content"
-                fi
-              fi
-            fi
-
-            if [[ -n "$target" && "$target" == *"vendor/"* ]]; then
-              dir=$(dirname "$file")
-              resolved=$(realpath -m "$dir/$target")
-              if [ -e "$resolved" ]; then
-                rm -rf "$file"
-                cp -r "$resolved" "$file"
-              fi
-            fi
-          done
+          git clone --depth=1 https://github.com/secr5t/android_kernel_CPH2269 -b main android_kernel
 
       - name: Build Kernel
         uses: dabao1955/kernel_build_action@main
@@ -55,8 +25,4 @@ jobs:
           aosp-clang: true
           android-version: 11
           aosp-clang-version: r383902
-          vendor: true
-          vendor-url: https://github.com/oppo-source/android_kernel_modules_oppo_mt6765
-          vendor-branch: oppo/mt6765_r_11.1.4_a16
-          vendor-dir: vendor
           access-token: ${{ secrets.GITHUB_TOKEN }}
