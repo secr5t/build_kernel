@@ -22,6 +22,7 @@ jobs:
           config: oppo6765_defconfig
           arch: arm64
           aosp-gcc: true
+          ccache: true
           aosp-clang: true
           android-version: 11
           aosp-clang-version: r383902
