@@ -32,23 +32,6 @@ jobs:
           aosp-clang: true
           android-version: 11
           aosp-clang-version: r383902
+          anykernel3: true
+          release: true
           access-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Copy Kernel Image to AnyKernel
-        run: |
-          mkdir -p $GITHUB_WORKSPACE/CPH2269_anykernel
-          IMAGE_PATH=$(find android_kernel -type f -name "Image" -print -quit)
-          if [ -f "$IMAGE_PATH" ]; then
-            echo "Kernel image: $IMAGE_PATH"
-            cp -v "$IMAGE_PATH" $GITHUB_WORKSPACE/CPH2269_anykernel/
-          else
-            echo "Cant find kernel image"
-            exit 1
-          fi
-
-      - name: Upload Kernel Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: CPH2269-Kernel
-          path: CPH2269_anykernel/
-          compression-level: 9
