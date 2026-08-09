@@ -15,10 +15,38 @@ jobs:
         run: |
           git clone https://github.com/oppo-source/android_kernel_oppo_mt6765 -b oppo/mt6765_t_13.0.0 --depth 1 android_kernel
 
-      - name: Checkout and Copy Kernel Modules
+      - name: Checkout Kernel Modules
         run: |
           git clone https://github.com/oppo-source/android_kernel_modules_oppo_mt6765 -b oppo/mt6765_t_13.0.0 --depth 1 android_kernel_modules
-          cp -r android_kernel_modules/vendor android_kernel/
+
+      - name: Fix Symlinks
+        run: |
+          cd android_kernel
+          
+          VENDOR_DIR="../android_kernel_modules/vendor"
+          TARGET_VENDOR=$(readlink -f "$VENDOR_DIR")
+
+          if [ ! -d "$TARGET_VENDOR" ]; then
+              echo "vendor dir not found: $VENDOR_DIR"
+              exit 1
+          fi
+
+          find . -xtype l -print0 | while IFS= read -r -d '' link; do
+              old_target=$(readlink "$link")
+              rel_vendor_path=$(echo "$old_target" | sed -n 's/.*vendor\///p')
+              
+              if [ -n "$rel_vendor_path" ]; then
+                  new_target="$TARGET_VENDOR/$rel_vendor_path"
+                  link_dir=$(dirname "$link")
+                  rel_new_target=$(realpath --relative-to="$link_dir" "$new_target")
+                  
+                  rm "$link"
+                  ln -s "$rel_new_target" "$link"
+                  echo "Fixed: $link -> $rel_new_target"
+              fi
+          done
+
+          find . -xtype l
 
       - name: Setup xxKSU
         run: |
