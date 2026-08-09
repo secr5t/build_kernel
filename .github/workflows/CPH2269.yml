@@ -13,7 +13,7 @@ jobs:
     steps:
       - name: Checkout Kernel Source
         run: |
-          git clone https://github.com/oppo-source/android_kernel_oppo_mt6765 -b oppo/mt6765_t_13.0.0 --depth 1 android_kernel
+          git clone https://github.com/secr5t/android_kernel_CPH2269 -b main --depth 1 android_kernel
 
       - name: Setup xxKSU
         run: |
