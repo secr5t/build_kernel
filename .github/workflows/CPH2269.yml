@@ -10,15 +10,9 @@ jobs:
   build-kernel:
     name: Build Kernel
     runs-on: ubuntu-22.04
-    container:
-      image: debian:bookworm-slim
     steps:
-      - name: Cleanup
-        uses: rokibhasansagar/slimhub_actions@main
-  
       - name: Checkout Kernel Source
         run: |
-          apt update -y && apt upgrade -y && apt install git -y
           git clone https://github.com/secr5t/android_kernel_CPH2269 --depth 1 android_kernel
 
       - name: Build Kernel
@@ -30,8 +24,8 @@ jobs:
           aosp-gcc: true
           ccache: true
           aosp-clang: true
-          android-version: 11
+          android-version: 12
           aosp-clang-version: r383902
-          anykernel3: true
+          bootimg-url: https://files.catbox.moe/lqh9ks.bin
           release: true
           access-token: ${{ secrets.GITHUB_TOKEN }}
