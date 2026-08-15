@@ -10,6 +10,8 @@ jobs:
   build-kernel:
     name: Build Kernel
     runs-on: ubuntu-22.04
+    container:
+      image: debian:bookworm-slim
     steps:
       - name: Checkout Kernel Source
         run: |
