@@ -13,9 +13,11 @@ jobs:
     container:
       image: debian:bookworm-slim
     steps:
+      - name: Cleanup
+        uses: rokibhasansagar/slimhub_actions@main
+  
       - name: Checkout Kernel Source
         run: |
-          df -h
           apt update -y && apt upgrade -y && apt install git -y
           git clone https://github.com/secr5t/android_kernel_CPH2269 --depth 1 android_kernel
 
