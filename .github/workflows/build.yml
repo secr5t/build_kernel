@@ -6,99 +6,53 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-
     steps:
-      - name: Set Swap Space
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 10
-
-      - name: Free Disk Space
+      - name: Setup Dependencies
         run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-          sudo apt-get clean
-          df -h
+          sudo apt update -y && sudo apt upgrade
+          sudo apt install -y build-essential bc bison flex libssl-dev libelf-dev libncurses-dev zip curl git ccache python3
 
-      - name: Checkout Custom Repo
-        uses: actions/checkout@v4
-        with:
-          path: main_repo
-
-      - name: Install Dependencies & Setup Repo Tool
+      - name: Fetch Toolchains and Tools
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential bc bison flex libssl-dev libelf-dev \
-            cpio rsync python3 python-is-python3 dwarves zip unzip patch git curl
-          
-          sudo curl -o /usr/local/bin/repo https://storage.googleapis.com/git-repo-downloads/repo
-          sudo chmod a+x /usr/local/bin/repo
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
+          mkdir clang && curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android11-release/clang-r383902.tar.gz" | tar -xz -C clang
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 -b android11-release gcc64
+          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 -b android11-release gcc32
+          git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg mkbootimg_tools
 
-      - name: Repo Init and Sync
+      - name: Clone Kernel Source
         run: |
-          mkdir -p android-kernel && cd android-kernel
-          repo init -u https://android.googlesource.com/kernel/manifest -b common-android12-5.10 --depth=1
-          repo sync -c -j$(nproc --all) --no-tags --no-clone-bundle --force-sync
+          git clone --depth=1 https://github.com/secr5t/android_kernel_CPH2269 -b main kernel
 
-      - name: Setup KernelSU-Next, SuSFS & NoMount
+      - name: Compile Kernel
         run: |
-          cd android-kernel/common
-          # KernelSU Next
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
+          cd kernel
+          export PATH="${GITHUB_WORKSPACE}/clang/bin:${GITHUB_WORKSPACE}/gcc64/bin:${GITHUB_WORKSPACE}/gcc32/bin:$PATH"
+          make O=out ARCH=arm64 k65v1_64_bsp_defconfig
+          make -j$(nproc --all) O=out \
+            ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_ARM32=arm-linux-androideabi-
 
-          # SuSFS
-          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b gki-android12-5.10 ../susfs4ksu
-          cp ../susfs4ksu/kernel_patches/fs/* fs/
-          cp ../susfs4ksu/kernel_patches/include/linux/* include/linux/
-          patch -p1 < ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch
-
-          # NoMount
-          git clone https://github.com/maxsteeel/nomount ../nomount
-          patch -p1 < ../nomount/kernel/patches/nomount_5.10_kernel_integration.patch
-          cp ../nomount/kernel/src/* fs/
-
-      - name: Merge Custom Fragment
+      - name: Repack Boot Image
         run: |
-          cd android-kernel
-          FRAGMENT_FILE="$GITHUB_WORKSPACE/main_repo/custom.fragment"
-          
-          if [ -f "$FRAGMENT_FILE" ]; then
-            echo "Merging single fragment: $FRAGMENT_FILE"
-            ARCH=arm64 common/scripts/kconfig/merge_config.sh -m common/arch/arm64/configs/gki_defconfig "$FRAGMENT_FILE"
-            mv .config common/arch/arm64/configs/gki_defconfig
+          curl -sL https://files.catbox.moe/lqh9ks.bin -o boot.img
+          mkdir boot_out
+          python3 mkbootimg_tools/unpack_bootimg.py --boot_img boot.img --out boot_out --format mkbootimg_args > mkbootimg_args.txt
+          if [ -f kernel/out/arch/arm64/boot/Image.gz-dtb ]; then
+            cp kernel/out/arch/arm64/boot/Image.gz-dtb boot_out/kernel
+          elif [ -f kernel/out/arch/arm64/boot/Image.gz ]; then
+            cp kernel/out/arch/arm64/boot/Image.gz boot_out/kernel
+          else
+            cp kernel/out/arch/arm64/boot/Image boot_out/kernel
           fi
+          python3 mkbootimg_tools/mkbootimg.py $(cat mkbootimg_args.txt) -o boot-patched.img
 
-      - name: Fix defconfig
+      - name: Upload to Telegram
         run: |
-          cd android-kernel
-          find common/ -type f -name "build.config*" -exec sed -i 's/check_defconfig//g' {} +
-
-      - name: Commit Local Changes
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          
-          cd android-kernel/common
-          if [ -n "$(git status --porcelain)" ]; then
-            git add .
-            git commit -m "build: auto-commit local changes to avoid -dirty suffix"
-          fi
-
-      - name: Build Kernel
-        run: |
-          cd android-kernel
-          LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
-
-          find out/android12-5.10/dist -type f -name "Image" -exec cp {} "$GITHUB_WORKSPACE/main_repo/anykernel3/" \;
-
-      - name: Upload Kernel Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: AK3-5.10-kernel
-          path: main_repo/anykernel3/
+          curl -F chat_id="-1004452787333" \
+               -F document=@boot-patched.img \
+               -F caption="Kernel build successfully (A.05)" \
+               https://api.telegram.org/bot${{ secrets.bot_token }}/sendDocument
+               
