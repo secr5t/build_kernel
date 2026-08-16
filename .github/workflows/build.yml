@@ -9,15 +9,35 @@ jobs:
     steps:
       - name: Setup Dependencies
         run: |
-          sudo apt update -y && sudo apt upgrade
+          sudo apt update -y
           sudo apt install -y build-essential bc bison flex libssl-dev libelf-dev libncurses-dev zip curl git ccache python3
 
+      - name: Cache Toolchains
+        id: cache-toolchains
+        uses: actions/cache@v4
+        with:
+          path: |
+            clang
+            gcc64
+            gcc32
+            mkbootimg_tools
+          key: toolchains-r383902-mkbootimg
+
       - name: Fetch Toolchains and Tools
+        if: steps.cache-toolchains.outputs.cache-hit != 'true'
         run: |
           mkdir clang && curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android11-release/clang-r383902.tar.gz" | tar -xz -C clang
           git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 -b android11-release gcc64
           git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 -b android11-release gcc32
           git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg mkbootimg_tools
+
+      - name: Cache Ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-kernel-${{ github.sha }}
+          restore-keys: |
+            ccache-kernel-
 
       - name: Clone Kernel Source
         run: |
@@ -25,12 +45,16 @@ jobs:
 
       - name: Compile Kernel
         run: |
-          cd kernel
+          export CCACHE_DIR="${HOME}/.ccache"
           export PATH="${GITHUB_WORKSPACE}/clang/bin:${GITHUB_WORKSPACE}/gcc64/bin:${GITHUB_WORKSPACE}/gcc32/bin:$PATH"
+          export USE_CCACHE=1
+          export CCACHE_EXEC=$(which ccache)
+          ccache -M 5G
+          cd kernel
           make O=out ARCH=arm64 k65v1_64_bsp_defconfig
           make -j$(nproc --all) O=out \
             ARCH=arm64 \
-            CC=clang \
+            CC="ccache clang" \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-android- \
             CROSS_COMPILE_ARM32=arm-linux-androideabi-
@@ -55,4 +79,3 @@ jobs:
                -F document=@boot-patched.img \
                -F caption="Kernel build successfully (A.05)" \
                https://api.telegram.org/bot${{ secrets.bot_token }}/sendDocument
-               
