@@ -20,16 +20,17 @@ jobs:
             clang
             gcc64
             gcc32
-            mkbootimg_tools
-          key: toolchains-r383902-mkbootimg
+            magiskboot
+          key: toolchains-r383902-magiskboot
 
-      - name: Fetch Toolchains and Tools
+      - name: Fetch Toolchains
         if: steps.cache-toolchains.outputs.cache-hit != 'true'
         run: |
           mkdir clang && curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android11-release/clang-r383902.tar.gz" | tar -xz -C clang
           git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 -b android11-release gcc64
           git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 -b android11-release gcc32
-          git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg mkbootimg_tools
+          curl -sLo magiskboot https://raw.githubusercontent.com/Uevo001/magiskboot-linux/refs/heads/main/x86_64/magiskboot
+          chmod +x magiskboot
 
       - name: Cache Ccache
         uses: actions/cache@v4
@@ -41,7 +42,7 @@ jobs:
 
       - name: Clone Kernel Source
         run: |
-          git clone --depth=1 https://github.com/secr5t/android_kernel_CPH2269 -b main kernel
+          git clone --depth=1 https://github.com/secr5t/android_kernel_CPH2269 -b main kernel_src
 
       - name: Compile Kernel
         run: |
@@ -50,7 +51,7 @@ jobs:
           export USE_CCACHE=1
           export CCACHE_EXEC=$(which ccache)
           ccache -M 5G
-          cd kernel
+          cd kernel_src
           make O=out ARCH=arm64 k65v1_64_bsp_defconfig
           make -j$(nproc --all) O=out \
             ARCH=arm64 \
@@ -61,17 +62,17 @@ jobs:
 
       - name: Repack Boot Image
         run: |
+          chmod +x magiskboot
           curl -sL https://files.catbox.moe/lqh9ks.bin -o boot.img
-          mkdir boot_out
-          python3 mkbootimg_tools/unpack_bootimg.py --boot_img boot.img --out boot_out --format mkbootimg_args > mkbootimg_args.txt
-          if [ -f kernel/out/arch/arm64/boot/Image.gz-dtb ]; then
-            cp kernel/out/arch/arm64/boot/Image.gz-dtb boot_out/kernel
-          elif [ -f kernel/out/arch/arm64/boot/Image.gz ]; then
-            cp kernel/out/arch/arm64/boot/Image.gz boot_out/kernel
+          ./magiskboot unpack boot.img
+          if [ -f kernel_src/out/arch/arm64/boot/Image.gz-dtb ]; then
+            cp kernel_src/out/arch/arm64/boot/Image.gz-dtb kernel
+          elif [ -f kernel_src/out/arch/arm64/boot/Image.gz ]; then
+            cp kernel_src/out/arch/arm64/boot/Image.gz kernel
           else
-            cp kernel/out/arch/arm64/boot/Image boot_out/kernel
+            cp kernel_src/out/arch/arm64/boot/Image kernel
           fi
-          python3 mkbootimg_tools/mkbootimg.py $(cat mkbootimg_args.txt) -o boot-patched.img
+          ./magiskboot repack boot.img boot-patched.img
 
       - name: Upload to Telegram
         run: |
