@@ -6,47 +6,45 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    container:
-      image: debian:bookworm-slim
     permissions:
       contents: write
 
     steps:
-      - name: Setup Debian Minimal & Repo CLI
+      - name: Clean Runner & Free Space
         run: |
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            git \
-            curl \
-            python3 \
-            ca-certificates \
-            bc \
-            bison \
-            flex \
-            libssl-dev \
-            zip \
-            tar \
-            cpio \
-            file \
-            rsync \
-            binutils
-          curl -s https://storage.googleapis.com/git-repo-downloads/repo > /usr/local/bin/repo
-          chmod a+x /usr/local/bin/repo
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          sudo docker stop $(docker ps -a -q) 2>/dev/null || true
+          sudo docker rm $(docker ps -a -q) 2>/dev/null || true
+          sudo docker rmi $(docker images -q) 2>/dev/null || true
+          sudo rm -rf /var/lib/docker /etc/docker
+          sudo apt-get purge -y --auto-remove docker docker-engine docker.io containerd runc
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo apt-get clean
+
+      - name: Setup Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git curl python3 bc bison flex libssl-dev zip tar cpio
+          sudo curl -s https://storage.googleapis.com/git-repo-downloads/repo > /usr/local/bin/repo
+          sudo chmod a+x /usr/local/bin/repo
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Sync Kernel Source
+      - name: Sync Source
         run: |
           mkdir gki-kernel
           cd gki-kernel
           repo init -u https://android.googlesource.com/kernel/manifest -b common-android12-5.10-lts --depth=1
           repo sync -c -j$(nproc --all) --no-clone-bundle --no-tags
 
-      - name: Build GKI Kernel
+      - name: Build Kernel
         run: |
           cd gki-kernel
           BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
@@ -57,7 +55,6 @@ jobs:
           IMAGE_PATH=$(find gki-kernel/out -name Image -type f | head -n 1)
 
           if [ -z "$IMAGE_PATH" ]; then
-            echo "Build error: Image file not found"
             exit 1
           fi
 
@@ -79,4 +76,3 @@ jobs:
           name: GKI Kernel 5.10.${{ env.SUBLEVEL }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
