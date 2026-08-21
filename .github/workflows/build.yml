@@ -1,4 +1,4 @@
-name: Build Kernel
+name: Build GKI Kernel
 
 on:
   workflow_dispatch:
@@ -6,77 +6,57 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
     steps:
-      - name: Setup Dependencies
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Build Environment
         run: |
-          sudo apt update -y
-          sudo apt install -y build-essential bc bison flex libssl-dev libelf-dev libncurses-dev zip curl git ccache python3
+          sudo apt-get update
+          sudo apt-get install -y repo git flex bison libssl-dev bc zip curl
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Cache Toolchains
-        id: cache-toolchains
-        uses: actions/cache@v4
-        with:
-          path: |
-            clang
-            gcc64
-            gcc32
-            magiskboot
-          key: toolchains-r383902-magiskboot
-
-      - name: Fetch Toolchains
-        if: steps.cache-toolchains.outputs.cache-hit != 'true'
+      - name: Sync Kernel Source
         run: |
-          mkdir clang && curl -L "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android11-release/clang-r383902.tar.gz" | tar -xz -C clang
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 -b android11-release gcc64
-          git clone --depth=1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 -b android11-release gcc32
-          curl -sLo magiskboot https://raw.githubusercontent.com/Uevo001/magiskboot-linux/refs/heads/main/x86_64/magiskboot
-          chmod +x magiskboot
+          mkdir gki-kernel
+          cd gki-kernel
+          repo init -u https://android.googlesource.com/kernel/manifest -b common-android12-5.10-lts --depth=1
+          repo sync -c -j$(nproc --all) --no-clone-bundle --no-tags
 
-      - name: Cache Ccache
-        uses: actions/cache@v4
-        with:
-          path: ~/.ccache
-          key: ccache-kernel-${{ github.sha }}
-          restore-keys: |
-            ccache-kernel-
-
-      - name: Clone Kernel Source
+      - name: Build GKI Kernel
         run: |
-          git clone --depth=1 https://github.com/secr5t/android_kernel_CPH2269 -b main kernel_src
+          cd gki-kernel
+          BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
 
-      - name: Compile Kernel
+      - name: Package AnyKernel3
         run: |
-          export CCACHE_DIR="${HOME}/.ccache"
-          export PATH="${GITHUB_WORKSPACE}/clang/bin:${GITHUB_WORKSPACE}/gcc64/bin:${GITHUB_WORKSPACE}/gcc32/bin:$PATH"
-          export USE_CCACHE=1
-          export CCACHE_EXEC=$(which ccache)
-          ccache -M 5G
-          cd kernel_src
-          make O=out ARCH=arm64 k65v1_64_bsp_defconfig
-          make -j$(nproc --all) O=out \
-            ARCH=arm64 \
-            CC="ccache clang" \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-android- \
-            CROSS_COMPILE_ARM32=arm-linux-androideabi-
-
-      - name: Repack Boot Image
-        run: |
-          chmod +x magiskboot
-          curl -sL https://files.catbox.moe/lqh9ks.bin -o boot.img
-          ./magiskboot unpack boot.img
-          if [ -f kernel_src/out/arch/arm64/boot/Image.gz-dtb ]; then
-            cp kernel_src/out/arch/arm64/boot/Image.gz-dtb kernel
-          elif [ -f kernel_src/out/arch/arm64/boot/Image.gz ]; then
-            cp kernel_src/out/arch/arm64/boot/Image.gz kernel
-          else
-            cp kernel_src/out/arch/arm64/boot/Image kernel
+          SUBLEVEL=$(grep "^SUBLEVEL =" gki-kernel/common/Makefile | tr -d ' ' | cut -d= -f2)
+          IMAGE_PATH=$(find gki-kernel/out -name Image -type f | head -n 1)
+          
+          if [ -z "$IMAGE_PATH" ]; then
+            echo "Build error: Image file not found"
+            exit 1
           fi
-          ./magiskboot repack boot.img boot-patched.img
 
-      - name: Upload to Telegram
-        run: |
-          curl -F chat_id="-1004452787333" \
-               -F document=@boot-patched.img \
-               -F caption="Kernel build successfully (A.05)" \
-               https://api.telegram.org/bot${{ secrets.bot_token }}/sendDocument
+          cp "$IMAGE_PATH" anykernel3/Image
+          
+          cd anykernel3
+          ZIP_NAME="AK3-5.10.${SUBLEVEL}.zip"
+          zip -r9 "../${ZIP_NAME}" * -x .git .gitignore README.md
+          cd ..
+
+          echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
+          echo "SUBLEVEL=${SUBLEVEL}" >> $GITHUB_ENV
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ZIP_NAME }}
+          tag_name: 5.10.${{ env.SUBLEVEL }}
+          name: GKI Kernel 5.10.${{ env.SUBLEVEL }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
