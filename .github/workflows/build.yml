@@ -23,6 +23,11 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 15
+
       - name: Sync Source
         run: |
           mkdir gki-kernel
