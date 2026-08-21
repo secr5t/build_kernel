@@ -6,19 +6,38 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    container:
+      image: debian:bookworm-slim
     permissions:
       contents: write
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Build Environment
+      - name: Setup Debian Minimal & Repo CLI
         run: |
-          sudo apt-get update
-          sudo apt-get install -y repo git flex bison libssl-dev bc zip curl
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            git \
+            curl \
+            python3 \
+            ca-certificates \
+            bc \
+            bison \
+            flex \
+            libssl-dev \
+            zip \
+            tar \
+            cpio \
+            file \
+            rsync \
+            binutils
+          curl -s https://storage.googleapis.com/git-repo-downloads/repo > /usr/local/bin/repo
+          chmod a+x /usr/local/bin/repo
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
       - name: Sync Kernel Source
         run: |
@@ -36,14 +55,14 @@ jobs:
         run: |
           SUBLEVEL=$(grep "^SUBLEVEL =" gki-kernel/common/Makefile | tr -d ' ' | cut -d= -f2)
           IMAGE_PATH=$(find gki-kernel/out -name Image -type f | head -n 1)
-          
+
           if [ -z "$IMAGE_PATH" ]; then
             echo "Build error: Image file not found"
             exit 1
           fi
 
           cp "$IMAGE_PATH" anykernel3/Image
-          
+
           cd anykernel3
           ZIP_NAME="AK3-5.10.${SUBLEVEL}.zip"
           zip -r9 "../${ZIP_NAME}" * -x .git .gitignore README.md
@@ -60,3 +79,4 @@ jobs:
           name: GKI Kernel 5.10.${{ env.SUBLEVEL }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
