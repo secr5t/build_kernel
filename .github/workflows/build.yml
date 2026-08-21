@@ -58,7 +58,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.ZIP_NAME }}
-          tag_name: 5.10.${{ env.SUBLEVEL }}
+          tag_name: android12-5.10.${{ env.SUBLEVEL }}
           name: GKI Kernel 5.10.${{ env.SUBLEVEL }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
